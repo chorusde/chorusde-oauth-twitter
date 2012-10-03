@@ -9,270 +9,181 @@ using Windows.Security.Cryptography;
 using Windows.Security.Cryptography.Core;
 using Windows.Storage.Streams;
 using Windows.Security.Authentication.Web;
+using Windows.Security.Credentials;
 
 namespace Chorusde.OAuth.Twitter
 {
     public sealed partial class MainPage : Page
     {
-        private const string _requestTokenUrl = "https://api.twitter.com/oauth/request_token";
-        private const string _redirectUrlBase = "https://api.twitter.com/oauth/authorize?oauth_token=";
-        private const string _accessTokenUrl = "https://api.twitter.com/oauth/access_token";
+        private const string _consumer_key = "コンシューマーキー（アプリケーションID）";
+        private const string _consumer_key_secret = "アプリケーション秘密鍵";
+        private const string _callbacl_url = "コールバックURL";
+        private const string _valutResource = "Chorusde.OAuth.Twitter";
+        private const string _pName_oauth_token = "oauth_token";
+        private const string _pName_oauth_token_secret = "oauth_token_secret";
+        private const string _pName_oauth_user_id = "user_id";
+        private const string _pName_screen_name = "screen_name";
+
+        TwitterRequest _twitterRequest;
+        private PasswordManager _passwordManager;
+        private Dictionary<string, string> _oauthDictionary;
 
         public MainPage()
         {
             this.InitializeComponent();
+            _twitterRequest = new TwitterRequest(_consumer_key, _consumer_key_secret, _callbacl_url);
+            _passwordManager = new PasswordManager(_valutResource);
         }
 
+        #region ユーザーオペレーション制御
         /// <summary>
         /// 実行ボタンクリック後の制御
         /// </summary>
-        private async void _btExecute_Click(object sender, RoutedEventArgs e)
+        private async void _btAuthExecute_Click(object sender, RoutedEventArgs e)
         {
-            DebugPrint("リクエストトークンの取得要求開始...");
-            var requestTokenResponse = await GetRequetToken();
-            if (requestTokenResponse != null)
+            if (!String.IsNullOrEmpty(_tbTwitterID.Text))
             {
-                DebugPrint("リクエストトークンの取得成功");
-                DebugPrint("レスポンス: " + requestTokenResponse);
-            }
-            else
-            {
-                return;
-            }
-            
-            DebugPrint("Web認証実行開始...");
-            var webAuthResponse = await RedirectUser(requestTokenResponse);
-            if (webAuthResponse != null)
-            {
-                DebugPrint("Web認証成功");
-                DebugPrint("レスポンス: " + webAuthResponse);
-            }
-            else
-            {
-                return;
-            }
-            
-            DebugPrint("アクセストークンの取得要求開始...");
-            var accessTokenResponse = await GetAccessToken(webAuthResponse);
-            if (accessTokenResponse != null)
-            {
-                DebugPrint("アクセストークンの取得成功");
-                DebugPrint("レスポンス: " + accessTokenResponse);
-            }
-            else
-            {
-                return;
-            }
-        }
+                //保存されている認証情報の読み込み
+                var oauthResponse = _passwordManager.GetPassword(_tbTwitterID.Text);
 
-        /// <summary>
-        /// リクエストトークンの取得
-        /// </summary>
-        private async Task<string> GetRequetToken()
-        {
-            string requestTokenResponse = null;
-
-            try
-            {
-                //タイムスタンプ（UNIX時間）の生成
-                TimeSpan sinceEpoch = (DateTime.Now - new DateTime(1970, 1, 1, 0, 0, 0, 0).ToLocalTime());
-            
-                //ユニークな認証トークンの生成
-                var rand = new Random();
-                Int32 Nonce = rand.Next(1000000000);
-
-                //シグネチャ用文字列の生成
-                String SigBaseStringParams = "oauth_callback=" + Uri.EscapeDataString(_tbCallbackUrl.Text);
-                SigBaseStringParams += "&" + "oauth_consumer_key=" + _tbConsumerKey.Text;
-                SigBaseStringParams += "&" + "oauth_nonce=" + Nonce.ToString();
-                SigBaseStringParams += "&" + "oauth_signature_method=HMAC-SHA1";
-                SigBaseStringParams += "&" + "oauth_timestamp=" + Math.Round(sinceEpoch.TotalSeconds);
-                SigBaseStringParams += "&" + "oauth_version=1.0";
-                String SigBaseString = "POST&";
-                SigBaseString += Uri.EscapeDataString(_requestTokenUrl) + "&" + Uri.EscapeDataString(SigBaseStringParams);
-
-                //シグネチャ用文字列をハッシュ化(HMAC_SHA1)しシグネチャを生成
-                IBuffer KeyMaterial = CryptographicBuffer.ConvertStringToBinary(_tbConsumerSecret.Text + "&", BinaryStringEncoding.Utf8);
-                MacAlgorithmProvider HmacSha1Provider = MacAlgorithmProvider.OpenAlgorithm("HMAC_SHA1");
-                CryptographicKey MacKey = HmacSha1Provider.CreateKey(KeyMaterial);
-                IBuffer DataToBeSigned = CryptographicBuffer.ConvertStringToBinary(SigBaseString, BinaryStringEncoding.Utf8);
-                IBuffer SignatureBuffer = CryptographicEngine.Sign(MacKey, DataToBeSigned);
-                String Signature = CryptographicBuffer.EncodeToBase64String(SignatureBuffer);
-
-                //認証要求のためのデータ文字列を生成
-                String DataToPost = "OAuth oauth_callback=\"" + Uri.EscapeDataString(_tbCallbackUrl.Text) + "\"";
-                DataToPost += ", oauth_consumer_key=\"" + _tbConsumerKey.Text + "\"";
-                DataToPost += ", oauth_nonce=\"" + Nonce.ToString() + "\"";
-                DataToPost += ", oauth_signature_method=\"HMAC-SHA1\"";
-                DataToPost += ", oauth_timestamp=\"" + Math.Round(sinceEpoch.TotalSeconds) + "\"";
-                DataToPost += ", oauth_version=\"1.0\"";
-                DataToPost += ", oauth_signature=\"" + Uri.EscapeDataString(Signature) + "\"";
-
-                //リクエストトークンの取得要求をポスト
-                HttpWebRequest Request = (HttpWebRequest)WebRequest.Create(_requestTokenUrl);
-                Request.Method = "POST";
-                Request.Headers["Authorization"] = DataToPost;
-                HttpWebResponse Response = (HttpWebResponse)await Request.GetResponseAsync();
-                StreamReader ResponseDataStream = new StreamReader(Response.GetResponseStream());
-                requestTokenResponse = await ResponseDataStream.ReadToEndAsync();
-            }
-            catch (Exception ex)
-            {
-                DebugPrint("Error: " + ex.Message);
-            }
-
-            return requestTokenResponse;
-        }
-
-        /// <summary>
-        /// ユーザをTwitterの認証画面にリダイレクトしWeb認証を実行
-        /// </summary>
-        /// <param name="responseTokenResponse">リクエストトークン要求のレスポンス</param>
-        private async Task<string> RedirectUser(string requestTokenResponse)
-        {
-            string webAuthResponse = null;
-
-            try
-            {
-                if (requestTokenResponse != null)
+                if (!String.IsNullOrEmpty(oauthResponse) && initlizeOAuthInfo(oauthResponse))
                 {
-                    //リクエストトークン要求のレスポンスからトークンを取得
-                    String oauth_token = null;
-                    var responseArray = requestTokenResponse.Split('&');
-                    foreach (string paramArray in responseArray)
-                    {
-                        var paramSet = paramArray.Split('=');
-                        switch (paramSet[0])
-                        {
-                            case "oauth_token":
-                                oauth_token = paramSet[1];
-                                break;
-                        }
-                    }
+                    DebugPrint("保存されている認証情報を読み込みました");
+                    Authorized();
+                }
+                else
+                {
+                    //認証情報が見つからない場合は、認証開始
+                    DebugPrint("保存されている認証情報はありません。OAuth要求を開始しています...");
+                    string response = await _twitterRequest.GetAuthorization();
 
-                    if (oauth_token != null)
+                    if (!String.IsNullOrEmpty(response) && initlizeOAuthInfo(response))
                     {
-                        //ユーザをTwitterの認証画面にリダイレクトしWeb認証を開始
-                        var redirectUrl = _redirectUrlBase + oauth_token;
-                        System.Uri StartUri = new Uri(redirectUrl);
-                        System.Uri EndUri = new Uri(_tbCallbackUrl.Text);
-                        WebAuthenticationResult WebAuthenticationResult = await WebAuthenticationBroker.AuthenticateAsync(WebAuthenticationOptions.None, StartUri,EndUri);
-
-                        //Web認証のレスポンスを取得
-                        if (WebAuthenticationResult.ResponseStatus == WebAuthenticationStatus.Success)
+                        try
                         {
-                            webAuthResponse = WebAuthenticationResult.ResponseData.ToString();
+                            if (_tbTwitterID.Text == _oauthDictionary[_pName_screen_name])
+                            {
+                                //入力されたユーザIDと取得した認証情報が一致する場合は認証情報を取得して保存
+                                Authorized();
+                                _passwordManager.SaveCredential(_tbTwitterID.Text, response);
+                                DebugPrint("認証情報を保存しました");
+                            }
+                            else
+                            {
+                                _passwordManager.RemoveCredential(_oauthDictionary[_pName_screen_name]);
+                                DebugPrint("指定したユーザーIDが取得した認証情報と一致しません");
+                            }
                         }
-                        else if (WebAuthenticationResult.ResponseStatus == WebAuthenticationStatus.ErrorHttp)
+                        catch (Exception ex)
                         {
-                            DebugPrint("Error: " + WebAuthenticationResult.ResponseErrorDetail.ToString());
-                        }
-                        else
-                        {
-                            DebugPrint("Error: " + WebAuthenticationResult.ResponseStatus.ToString());
+                            DebugPrint(ex.Message);
                         }
                     }
                 }
             }
-            catch (Exception ex)
+            else
             {
-                DebugPrint("Error: " + ex.Message);
+                DebugPrint("TwitterのユーザーIDが入力されていません");
             }
-
-            return webAuthResponse;
         }
 
         /// <summary>
-        /// アクセストークンの取得
+        /// 認証情報クリアボタンクリック時の制御
         /// </summary>
-        /// <param name="webAuthResponse">Web認証のレスポンス</param>
-        private async Task<string> GetAccessToken(string webAuthResponse)
+        private void _btReset_Click(object sender, RoutedEventArgs e)
         {
-            string accessTokenResponse = null;
-
-            try
+            //保存されている認証情報を削除
+            if (_passwordManager.RemoveAllCredential())
             {
-                if (webAuthResponse != null)
-                {
-                    //Web認証のレスポンスからトークンを取得
-                    string oauth_token = null;
-                    string oauth_verifier = null;
-                    var responseParts = webAuthResponse.Split('?');
-                    var responseArray = responseParts[responseParts.Length - 1].Split('&');
-                    foreach (string paramArray in responseArray)
-                    {
-                        var paramSet = paramArray.Split('=');
-                        switch (paramSet[0])
-                        {
-                            case "oauth_token":
-                                oauth_token = paramSet[1];
-                                break;
-                            case "oauth_verifier":
-                                oauth_verifier = paramSet[1];
-                                break;
-                        }
-                    }
-
-                    //タイムスタンプ（UNIX時間）の生成
-                    TimeSpan sinceEpoch = (DateTime.Now - new DateTime(1970, 1, 1, 0, 0, 0, 0).ToLocalTime());
-
-                    //ユニークな認証トークンの生成
-                    var rand = new Random();
-                    Int32 Nonce = rand.Next(1000000000);
-
-                    //シグネチャ用文字列の生成
-                    String SigBaseStringParams = "oauth_consumer_key=" + _tbConsumerKey.Text;
-                    SigBaseStringParams += "&" + "oauth_nonce=" + Nonce.ToString();
-                    SigBaseStringParams += "&" + "oauth_signature_method=HMAC-SHA1";
-                    SigBaseStringParams += "&" + "oauth_timestamp=" + Math.Round(sinceEpoch.TotalSeconds);
-                    SigBaseStringParams += "&" + "oauth_token=" + oauth_token;
-                    SigBaseStringParams += "&" + "oauth_version=1.0";
-                    String SigBaseString = "POST&";
-                    SigBaseString += Uri.EscapeDataString(_accessTokenUrl) + "&" + Uri.EscapeDataString(SigBaseStringParams);
-
-                    //シグネチャ用文字列をハッシュ化(HMAC_SHA1)しシグネチャを生成
-                    IBuffer KeyMaterial = CryptographicBuffer.ConvertStringToBinary(_tbConsumerSecret.Text + "&", BinaryStringEncoding.Utf8);
-                    MacAlgorithmProvider HmacSha1Provider = MacAlgorithmProvider.OpenAlgorithm("HMAC_SHA1");
-                    CryptographicKey MacKey = HmacSha1Provider.CreateKey(KeyMaterial);
-                    IBuffer DataToBeSigned = CryptographicBuffer.ConvertStringToBinary(SigBaseString, BinaryStringEncoding.Utf8);
-                    IBuffer SignatureBuffer = CryptographicEngine.Sign(MacKey, DataToBeSigned);
-                    String Signature = CryptographicBuffer.EncodeToBase64String(SignatureBuffer);
-
-                    //認証要求のためのデータ文字列を生成
-                    String DataToPost = "OAuth oauth_consumer_key=\"" + _tbConsumerKey.Text + "\"";
-                    DataToPost += ", oauth_nonce=\"" + Nonce.ToString() + "\"";
-                    DataToPost += ", oauth_signature_method=\"HMAC-SHA1\"";
-                    DataToPost += ", oauth_timestamp=\"" + Math.Round(sinceEpoch.TotalSeconds) + "\"";
-                    DataToPost += ", oauth_token=\"" + oauth_token + "\"";
-                    DataToPost += ", oauth_version=\"1.0\"";
-                    DataToPost += ", oauth_signature=\"" + Uri.EscapeDataString(Signature) + "\"";
-
-                    //リクエストトークンの取得要求をポスト
-                    HttpWebRequest Request = (HttpWebRequest)WebRequest.Create(_accessTokenUrl);
-                    Request.Method = "POST";
-                    Request.Headers["Authorization"] = DataToPost;
-
-                    var stream = new StreamWriter(await Request.GetRequestStreamAsync());
-                    await stream.WriteAsync(oauth_verifier);
-
-                    HttpWebResponse Response = (HttpWebResponse)await Request.GetResponseAsync();
-                    if (Response.StatusCode == HttpStatusCode.OK)
-                    {
-                        using (StreamReader ResponseDataStream = new StreamReader(Response.GetResponseStream()))
-                        {
-                            accessTokenResponse = await ResponseDataStream.ReadToEndAsync();
-                        }
-                    }
-                }
+                DebugPrint("保存されているすべての認証情報をクリアしました");
             }
-            catch (Exception ex)
+            else
             {
-                DebugPrint("Error: " + ex.Message);
+                DebugPrint("保存されている認証情報はありません");
             }
 
-            return accessTokenResponse;
+            _btTweet.IsEnabled = false;
+            _btAuthExecute.IsEnabled = true;
         }
 
+        /// <summary>
+        /// つぶやくボタンクリック後
+        /// </summary>
+        private async void _btTweet_Click(object sender, RoutedEventArgs e)
+        {
+            if (!String.IsNullOrEmpty(_tbTweetText.Text))
+            {
+                try
+                {
+                    var result = await _twitterRequest.UpdateStatus(_oauthDictionary[_pName_oauth_token], _oauthDictionary[_pName_oauth_token_secret], _tbTweetText.Text);
+                    DebugPrint("ステータスの更新（ツイート）に成功しました");
+                }
+                catch (Exception ex)
+                {
+                    DebugPrint(ex.Message);
+                }
+            }
+            else
+            {
+                DebugPrint("ツイートの内容を入力してください");
+            }
+        }
+        #endregion
+
+        /// <summary>
+        /// OAuth 認証情報を初期化
+        /// </summary>
+        private bool initlizeOAuthInfo(string oAuthResponse)
+        {
+            string oauth_token = String.Empty;
+            string oauth_token_secret = String.Empty;
+            string user_id = String.Empty;
+            string screen_name = String.Empty;
+
+            //リクエストからパラメーターを取得
+            var responseArray = oAuthResponse.Split('&');
+            foreach (string paramArray in responseArray)
+            {
+                var paramSet = paramArray.Split('=');
+                switch (paramSet[0])
+                {
+                    case _pName_oauth_token:
+                        oauth_token = paramSet[1];
+                        break;
+                    case _pName_oauth_token_secret:
+                        oauth_token_secret = paramSet[1];
+                        break;
+                    case _pName_oauth_user_id:
+                        user_id = paramSet[1];
+                        break;
+                    case _pName_screen_name:
+                        screen_name = paramSet[1];
+                        break;
+                }
+            }
+
+            //パラメーターをディクショナリに保持
+            if (!String.IsNullOrEmpty(oauth_token) && !String.IsNullOrEmpty(oauth_token_secret) && !String.IsNullOrEmpty(user_id) && !String.IsNullOrEmpty(screen_name))
+            {
+                _oauthDictionary = new Dictionary<string, string>();
+                _oauthDictionary.Add(_pName_oauth_token, oauth_token);
+                _oauthDictionary.Add(_pName_oauth_token_secret, oauth_token_secret);
+                _oauthDictionary.Add(_pName_oauth_user_id, user_id);
+                _oauthDictionary.Add(_pName_screen_name, screen_name);
+                return true;
+            }
+
+            return false;
+        }
+
+        //認証成功時
+        private void Authorized()
+        {
+            DebugPrint("認証に成功しました");
+            _btAuthExecute.IsEnabled = false;
+            _btTweet.IsEnabled = true;
+        }
+        
         /// <summary>
         /// メッセージ出力
         /// </summary>
