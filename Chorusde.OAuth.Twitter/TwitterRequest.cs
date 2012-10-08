@@ -237,12 +237,12 @@ namespace Chorusde.OAuth.Twitter
         {
             string response = String.Empty;
 
-            //リクエストトークンの取得要求をポスト
+            //APIへのリクエスト（ポスト）を作成
             HttpWebRequest Request = (HttpWebRequest)WebRequest.Create(destUrl);
             Request.Method = "POST";
             Request.Headers["Authorization"] = header;
 
-            //リクエストデータが存在する場合はストリームに書き込み
+            //リクエストデータが存在する場合はストリームに書き込む
             if (requestDataString != null)
             {
                 using (StreamWriter streamWriter = new StreamWriter(await Request.GetRequestStreamAsync()))
