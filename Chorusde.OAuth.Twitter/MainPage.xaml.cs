@@ -17,7 +17,6 @@ namespace Chorusde.OAuth.Twitter
     {
         private const string _consumer_key = "コンシューマーキー（アプリケーションID）";
         private const string _consumer_key_secret = "アプリケーション秘密鍵";
-        private const string _callbacl_url = "コールバックURL";
         private const string _valutResource = "Chorusde.OAuth.Twitter";
         private const string _pName_oauth_token = "oauth_token";
         private const string _pName_oauth_token_secret = "oauth_token_secret";
@@ -31,7 +30,11 @@ namespace Chorusde.OAuth.Twitter
         public MainPage()
         {
             this.InitializeComponent();
-            _twitterRequest = new TwitterRequest(_consumer_key, _consumer_key_secret, _callbacl_url);
+
+            //コールバックURLの作成
+            var callbackUrl = WebAuthenticationBroker.GetCurrentApplicationCallbackUri().ToString();
+
+            _twitterRequest = new TwitterRequest(_consumer_key, _consumer_key_secret, callbackUrl);
             _passwordManager = new PasswordManager(_valutResource);
         }
 
