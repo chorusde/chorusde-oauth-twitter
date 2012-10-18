@@ -71,8 +71,8 @@ namespace Chorusde.OAuth.Twitter
             //ユーザーのリダイレクト
             response = await RedirectUser(request_token);
 
-            //Web認証のレスポンスからトークンを取得
-            string oauth_token = null;
+            //Web認証のレスポンスから認証済みのリクエストトークンを取得
+            string oauth_request_token = null;
             string oauth_verifier = null;
             var webResponseParts = response.Split('?');
             var webResponseArray = webResponseParts[webResponseParts.Length - 1].Split('&');
@@ -82,7 +82,7 @@ namespace Chorusde.OAuth.Twitter
                 switch (paramSet[0])
                 {
                     case "oauth_token":
-                        oauth_token = paramSet[1];
+                        oauth_request_token = paramSet[1];
                         break;
                     case "oauth_verifier":
                         oauth_verifier = paramSet[1];
@@ -91,7 +91,7 @@ namespace Chorusde.OAuth.Twitter
             }
 
             //アクセストークンを取得
-            response = await GetAccessToken(oauth_token, oauth_verifier);
+            response = await GetAccessToken(oauth_request_token, oauth_verifier);
 
             return response;
         }
@@ -153,7 +153,7 @@ namespace Chorusde.OAuth.Twitter
         /// <summary>
         /// アクセストークンの取得
         /// </summary>
-        private async Task<string> GetAccessToken(string oauth_token, string oauth_verifier)
+        private async Task<string> GetAccessToken(string oauth_request_token, string oauth_verifier)
         {
             string response = String.Empty;
 
@@ -169,7 +169,7 @@ namespace Chorusde.OAuth.Twitter
             AddPercentEncodedItem(paramDictionary, _pName_oauth_version, _oauth_version);
 
             //認証トークンをパラメーターディクショナリに追加
-            AddPercentEncodedItem(paramDictionary, _pName_oauth_token, oauth_token);
+            AddPercentEncodedItem(paramDictionary, _pName_oauth_token, oauth_request_token);
 
             //シグネチャを生成しパラメーターに追加
             string signature = GenerateSignature(paramDictionary, _accessTokenUrl);

@@ -12,7 +12,7 @@
             <RowDefinition Height="AUTO" />
             <RowDefinition Height="AUTO" />
         </Grid.RowDefinitions>
-        <TextBlock Text="Twittert の OAuth 認証サンプル" TextWrapping="Wrap"
+        <TextBlock Text="Twitter の OAuth 認証サンプル" TextWrapping="Wrap"
                    Grid.Row="0" Style="{StaticResource HeaderTextStyle}"
                    Margin="25"/>
         <Grid Grid.Row="1" Margin="25">
